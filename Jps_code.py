@@ -1,4 +1,5 @@
 from tkinter import *
+import os
 import os.path
 import math
 from tkinter.filedialog import *
@@ -7,10 +8,22 @@ import operator
 import numpy as np
 import struct
 import threading
+from wand.image import *
+from wand.color import Color
+from wand.drawing import Drawing
+import sqlite3
+import pymysql
+import csv
+import xlrd
+from xlsxwriter import Workbook
+import xlsxwriter
+import matplotlib.pyplot as plt
+import glob
+import json
 
 ## 함수 선언
 def loadImage(fname):
-    global window, canvas, paper, filename, inImage, outImage, inW, inH, outW, outH, photo
+    global window, canvas, paper, filename, inImage, outImage, inW, inH, outW, outH, photo, VIEW_X, VIEW_Y
     fsize = os.path.getsize(fname)
     inH = inW = int(math.sqrt(fsize))
     inImage = np.zeros([inH, inW], dtype=np.int32)
@@ -21,9 +34,10 @@ def loadImage(fname):
     fp.close()
     
 def openFile():
-    global window, canvas, paper, filename,inImage, outImage,inW, inH, outW, outH, photo, gif
-    filename = askopenfilename(parent=window, filetypes=(("그림파일", "*.raw; *.gif"), ("모든파일", "*.*")))
-    if filename[-3:] == "gif":
+    global window, canvas, paper, filename,inImage, outImage,inW, inH, outW, outH, photo, gif, VIEW_X, VIEW_Y
+    filename = askopenfilename(parent=window,
+                               filetypes=(("그림파일", "*.raw;*.gif;*.jpg;*.png;*.tif;*.bmp"), ("모든파일", "*.*")))
+    if filename[-3:] != "raw":
         gif = True
         loadImage_gif(filename)
         equal_gif()
@@ -31,9 +45,16 @@ def openFile():
     else: gif = False
     loadImage(filename) # 파일 -> 입력메모리
     equal() # 입력메모리 -> 출력메모리
+    
+def display_geniune():
+    global VIEW_X, VIEW_Y
+    brt = askinteger('출력 비율을 정하세요. ', '64, 128, 256, 512, 1024..', minvalue=64, maxvalue=4096)
+    VIEW_X = VIEW_Y = brt
+    display_first()
 
 def display():
     global window, canvas, PLabel, paper, filename, inImage, outImage, inW, inH, outW, outH, photo, paper_copy
+    global VIEW_X, VIEW_Y
     if gif == True:
         display_gif()
         return
@@ -41,51 +62,66 @@ def display():
         canvas.destroy()
     if pLabel != None:
         pLabel.destroy()
-    window.geometry(str(outH) + 'x' + str(outW))
-    canvas = Canvas(window, width=outW, height=outH)
-    paper = PhotoImage(width=outW, height=outH)
-    canvas.create_image((outW/2, outH/2), image=paper, state='normal')
+    if VIEW_X >= outW or VIEW_Y >= outH:
+        VIEW_X = outW
+        VIEW_Y = outH
+    step = int(outW / VIEW_X)
+    window.geometry(str(VIEW_X * 2) + 'x' + str(VIEW_Y * 2))
+    canvas = Canvas(window, width=VIEW_X, height=VIEW_Y)
+    paper = PhotoImage(width=VIEW_X, height=VIEW_Y)
+    canvas.create_image((VIEW_X/2, VIEW_Y/2), image=paper, state='normal')
     def putPixel() :
-        for i in range(0, outH) :
-            for k in range(0, outW) :
+        for i in range(0, outH, step) :
+            for k in range(0, outW, step) :
                 data = outImage[i][k]
-                paper.put('#%02x%02x%02x' % (data, data, data), (k,i))
+                paper.put('#%02x%02x%02x' % (data, data, data), (int(k/step), int(i/step)))
     threading.Thread(target=putPixel).start()
-    canvas.pack()
-
+    canvas.pack(expand=1, anchor=CENTER)
+    status.configure(text="이미지 정보: " + str(outW) + " X " + str(outH) + " / 출력 정보: " + str(VIEW_X) + " X " + str(VIEW_Y))
+    status.pack()
     
 def display_first():
+    global window, canvas, paper, filename, inImage, outImage, inW, inH, outW, outH, photo, paper_copy
+    global VIEW_X, VIEW_Y
     if gif == True:
         display_first_gif()
         return
-    global window, canvas, paper, filename, inImage, outImage, inW, inH, outW, outH, photo, paper_copy
     if  canvas != None :
         canvas.destroy()
-    window.geometry(str(outH) + 'x' + str(outW))
-    canvas = Canvas(window, width=outW, height=outH)
-    paper = PhotoImage(width=outW, height=outH)
+    if VIEW_X >= outW or VIEW_Y >= outH:
+        VIEW_X = outW
+        VIEW_Y = outH
+    step = int(outW / VIEW_X)
+    window.geometry(str(VIEW_X * 2) + 'x' + str(VIEW_Y * 2))
+    canvas = Canvas(window, width=VIEW_X, height=VIEW_Y)
+    paper = PhotoImage(width=VIEW_X, height=VIEW_Y)
     paper_copy = paper.copy()
-    canvas.create_image((outW/2, outH/2), image=paper, state='normal')           
+    canvas.create_image((VIEW_X/2, VIEW_Y/2), image=paper, state='normal')
     def putPixel() :
-        for i in range(0, outH) :
-            for k in range(0, outW) :
+        for i in range(0, outH, step) :
+            for k in range(0, outW, step) :
                 data = outImage[i][k]
-                paper.put('#%02x%02x%02x' % (data, data, data), (k,i))
-                paper_copy.put('#%02x%02x%02x' % (data, data, data), (k,i))
+                paper.put('#%02x%02x%02x' % (data, data, data), (int(k/step), int(i/step)))
+                paper_copy.put('#%02x%02x%02x' % (data, data, data), (int(k/step), int(i/step)))
     threading.Thread(target=putPixel).start()        
-    canvas.pack()
-
+    canvas.pack(expand=1, anchor=CENTER)
+    status.configure(text="이미지 정보: " + str(outW) + " X " + str(outH) + " / 출력 정보: " + str(VIEW_X) + " X " + str(VIEW_Y))
+    status.pack()
     
 def display_copy():
+    global window, canvas, pLabel, paper, filename, inImage, outImage, inW, inH, outW, outH, photo, paper_copy
+    global VIEW_X, VIEW_Y
     if gif == True:
         display_copy_gif()
         return
-    global window, canvas, pLabel, paper, filename, inImage, outImage, inW, inH, outW, outH, photo, paper_copy
     if  canvas != None :
         canvas.destroy()
-    window.geometry(str(outH*2) + 'x' + str(outW))
-    canvas = Canvas(window, width=outW, height=outH)
-    canvas.create_image((outW/2, outH/2), image=paper, state='normal')
+    if VIEW_X >= outW or VIEW_Y >= outH:
+        VIEW_X = outW
+        VIEW_Y = outH
+    window.geometry(str(VIEW_X*2) + 'x' + str(VIEW_Y * 2))
+    canvas = Canvas(window, width=VIEW_X, height=VIEW_Y)
+    canvas.create_image((VIEW_X/2, VIEW_Y/2), image=paper, state='normal')
     canvas.pack(side=RIGHT)
     photo = PhotoImage()
     pLabel = Label(window, image=photo)
@@ -117,16 +153,35 @@ def equal():
     display_first()
     
 def saveFile():
-    if gif == True:
-        saveFile_gif()
-        return
-    global window, canvas, paper, filename,inImage, outImage,inW, inH, outW, outH
-    saveFp = asksaveasfile(parent=window, mode='wb',
-                               defaultextension="*.raw", filetypes=(("RAW파일", "*.raw"), ("모든파일", "*.*")))
+    global window, canvas, paper, filename, inImage, outImage, inW, inH, outW, outH
+    draw = Drawing()  # 빈 판
+    # 빈 판에 컬러 -> #000000 ~ #FFFFFF
+    saveFp = asksaveasfile(parent=window, mode='w', defaultextension='.png'
+                           , filetypes=(("그림파일", "*.gif;*.jpg;*.png;*.tif;*.bmp"), ("모든파일", "*.*")))
     for i in range(outW):
-        for k in range(outH):
-            saveFp.write( struct.pack('B',outImage[i][k]))
-    saveFp.close()
+        for j in range(outH):
+            dataR = outImage[i][j][0]
+            dataG = outImage[i][j][1]
+            dataB = outImage[i][j][2]
+            hexStr = '#'
+            if dataR > 15:
+                hexStr += hex(dataR)[2:]
+            else:
+                hexStr += ('0' + hex(dataR)[2:])
+            if dataG > 15:
+                hexStr += hex(dataG)[2:]
+            else:
+                hexStr += ('0' + hex(dataG)[2:])
+            if dataB > 15:
+                hexStr += hex(dataB)[2:]
+            else:
+                hexStr += ('0' + hex(dataB)[2:])
+            draw.fill_color = Color(hexStr)
+            draw.color(j, i, 'replace')
+    with Image(filename=filename) as img:
+        draw(img)
+        img.save(filename=saveFp.name)
+    print("SAVE OK")
 
 def exitFile() :
     global window, canvas, paper, filename,inImage, outImage,inW, inH, outW, outH
@@ -479,27 +534,12 @@ def sharpening(num):
             elif outImage[i][j] < 0: outImage[i][j] = 0
     display()
     
-def merge():
-    if gif:
-        merge_gif()
-        return
-    global window, canvas, paper, filename, inImage, outImage, inW, inH, outW, outH, photo
-    outW, outH = inW, inH
-    oldImage = inImage[:]
-    new_file = askopenfilename(parent=window, filetypes=(("그림파일", "*.raw"), ("모든파일", "*.*")))
-    loadImage(new_file)
-    newImage = inImage[:]
-    inImage = (np.array(oldImage) + np.array(newImage)) / 2
-    outImage = np.array(inImage[:], dtype=np.int32)
-    display()
-    
 ''' ######################### GIF 처리 공간 ######################### '''
 def loadImage_gif(fname) :
     global window, canvas, paper, filename, inImage, outImage, inW, inH, outW, outH, photo
-    global inImageR, inImageG, inImageB, outImageR, outImageG, outImgageB
-    photo = PhotoImage(file=filename)
-    inW = photo.width()
-    inH = photo.height()
+    photo = Image(filename=filename)
+    inW = photo.width
+    inH = photo.height
     inImage = []
     tmpList = []
     for i in range(inH):
@@ -507,9 +547,11 @@ def loadImage_gif(fname) :
         for k in range(inW) :
             tmpList.append(np.array([0, 0, 0]))
         inImage.append(tmpList)
+    blob = photo.make_blob(format='RGB')
     for  i  in range(inH):
         for  k  in  range(inW):
-            r, g, b = photo.get(k, i)
+            r, g, b = blob[(i * 3 * inH) + (k * 3) + 0], blob[(i * 3 * inH) + (k * 3) + 1], blob[
+                (i * 3 * inH) + (k * 3) + 2]
             inImage[i][k] = [r, g, b]
     inImage = np.array(inImage)
     photo = None
@@ -525,47 +567,65 @@ def saveFile_gif():
 
 def display_gif():
     global window, canvas, pLabel, paper, filename, inImage, outImage, inW, inH, outW, outH, photo, paper_copy
-    if  canvas != None :
+    global VIEW_X, VIEW_Y
+    if  canvas != None:
         canvas.destroy()
     if pLabel != None:
-        pLabel.destroy()    
-    window.geometry(str(outH) + 'x' + str(outW))
-    canvas = Canvas(window, width=outW, height=outH)
-    paper = PhotoImage(width=outW, height=outH)
-    canvas.create_image((outW/2, outH/2), image=paper, state='normal')
+        pLabel.destroy()
+    if VIEW_X >= outW or VIEW_Y >= outH:
+        VIEW_X = outW
+        VIEW_Y = outH
+    step = int(outW / VIEW_X)
+    window.geometry(str(VIEW_X * 2) + 'x' + str(VIEW_Y * 2))
+    canvas = Canvas(window, width=VIEW_X, height=VIEW_Y)
+    paper = PhotoImage(width=VIEW_X, height=VIEW_Y)
+    canvas.create_image((VIEW_X/2, VIEW_Y/2), image=paper, state='normal')
     def putPixel() :
-        for i in range(0, outH) :
-            for k in range(0, outW) :
+        for i in range(0, outH, step) :
+            for k in range(0, outW, step) :
                 data = outImage[i][k]
-                paper.put('#%02x%02x%02x' % (data[0], data[1], data[2]), (k,i))
+                paper.put('#%02x%02x%02x' % (data[0], data[1], data[2]), (int(k/step), int(i/step)))
     threading.Thread(target=putPixel).start()
-    canvas.pack()
+    canvas.pack(expand=1, anchor=CENTER)
+    status.configure(text="이미지 정보: " + str(outW) + " X " + str(outH) + " / 출력 정보: " + str(VIEW_X) + " X " + str(VIEW_Y))
+    status.pack()
 
 def display_first_gif():
     global window, canvas, paper, filename, inImage, outImage, inW, inH, outW, outH, photo, paper_copy
+    global VIEW_X, VIEW_Y
     if  canvas != None :
         canvas.destroy()
-    window.geometry(str(outH) + 'x' + str(outW))
-    canvas = Canvas(window, width=outW, height=outH)
-    paper = PhotoImage(width=outW, height=outH)
+    if VIEW_X >= outW or VIEW_Y >= outH:
+        VIEW_X = outW
+        VIEW_Y = outH
+    step = int(outW / VIEW_X)
+    window.geometry(str(VIEW_X * 2) + 'x' + str(VIEW_Y * 2))
+    canvas = Canvas(window, width=VIEW_X, height=VIEW_Y)
+    paper = PhotoImage(width=VIEW_X, height=VIEW_Y)
     paper_copy = paper.copy()
-    canvas.create_image((outW/2, outH/2), image=paper, state='normal')
+    canvas.create_image((VIEW_X/2, VIEW_Y/2), image=paper, state='normal')
     def putPixel() :
-        for i in range(0, outH) :
-            for k in range(0, outW) :
+        for i in range(0, outH, step) :
+            for k in range(0, outW, step) :
                 data = outImage[i][k]
-                paper.put('#%02x%02x%02x' % (data[0], data[1], data[2]), (k,i))
-                paper_copy.put('#%02x%02x%02x' % (data[0], data[1], data[2]), (k,i))
-    threading.Thread(target=putPixel).start()
-    canvas.pack()
+                paper.put('#%02x%02x%02x' % (data[0], data[1], data[2]), (int(k/step), int(i/step)))
+                paper_copy.put('#%02x%02x%02x' % (data[0], data[1], data[2]), (int(k/step), int(i/step)))
+    threading.Thread(target=putPixel).start()        
+    canvas.pack(expand=1, anchor=CENTER)
+    status.configure(text="이미지 정보: " + str(outW) + " X " + str(outH) + " / 출력 정보: " + str(VIEW_X) + " X " + str(VIEW_Y))
+    status.pack()
         
 def display_copy_gif():
     global window, canvas, pLabel, paper, filename, inImage, outImage, inW, inH, outW, outH, photo, paper_copy
+    global VIEW_X, VIEW_Y
     if  canvas != None :
         canvas.destroy()
-    window.geometry(str(outH*2) + 'x' + str(outW))
-    canvas = Canvas(window, width=outW, height=outH)
-    canvas.create_image((outW/2, outH/2), image=paper, state='normal')
+    if VIEW_X >= outW or VIEW_Y >= outH:
+        VIEW_X = outW
+        VIEW_Y = outH
+    window.geometry(str(VIEW_X*2) + 'x' + str(VIEW_Y * 2))
+    canvas = Canvas(window, width=VIEW_X, height=VIEW_Y)
+    canvas.create_image((VIEW_X/2, VIEW_Y/2), image=paper, state='normal')
     canvas.pack(side=RIGHT)
     photo = PhotoImage()
     pLabel = Label(window, image=photo)
@@ -880,7 +940,7 @@ def zoomIn_gif(num):
 def embossing_gif():
     global window, canvas, paper, filename, inImage, outImage, inW, inH, outW, outH, photo
     scale = askinteger("scale(3,5,7,9)", "정수", minvalue=1, maxvalue=10)
-    outW, outH = inW, outH
+    outW, outH = inW, inH
     if int(scale) % 2 == 0: embossing_gif()
     # mask matrix
     mask = np.zeros([scale, scale], dtype=np.int32)
@@ -908,7 +968,7 @@ def embossing_gif():
 def blurring_gif(num):
     global window, canvas, paper, filename, inImage, outImage, inW, inH, outW, outH, photo
     scale = askinteger("scale(3,5,7,9)", "정수", minvalue=1, maxvalue=10)
-    outW, outH = inW, outH
+    outW, outH = inW, inH
     if int(scale) % 2 == 0: embossing()
     # mask matrix
     mask = np.ones([scale, scale], dtype=np.float32)
@@ -928,7 +988,7 @@ def blurring_gif(num):
     
 def gausian_blurring_gif():
     global window, canvas, paper, filename, inImage, outImage, inW, inH, outW, outH, photo
-    outW, outH = inW, outH
+    outW, outH = inW, inH
     # mask matrix
     scale = 3
     mask = np.array([[1./16., 1./8., 1./16.], [1./8., 1./4., 1./8.], [1./16., 1./8., 1./16.]])
@@ -947,7 +1007,7 @@ def gausian_blurring_gif():
 
 def sharpening_gif(num):
     global window, canvas, paper, filename, inImage, outImage, inW, inH, outW, outH, photo
-    outW, outH = inW, outH
+    outW, outH = inW, inH
     # mask matrix
     scale = 3
     if num == 1:
@@ -1021,30 +1081,1185 @@ def hsi2rgb(hsi):
             rgb[k][j] = np.array([r, g, b]) * i * 3
     return np.array(rgb, dtype=np.int32)
     
-def merge_gif():
-    global window, canvas, paper, filename, inImage, outImage, inW, inH, outW, outH, photo
-    outW, outH = inW, inH
-    oldImage = np.copy(inImage)
-    new_file = askopenfilename(parent=window, filetypes=(("그림파일", "*.gif"), ("모든파일", "*.*")))
-    photo = PhotoImage(file=new_file)
-    inW = photo.width()
-    inH = photo.height()
-    newImage = []
+def saveCSV():
+    global window, canvas, paper, filename, inImage, outImage, inW, inH, outW, outH
+    output_file = asksaveasfile(parent=window, mode='w',
+                                defaultextension="*.csv", filetypes=(("CSV파일", "*.csv"), ("모든파일", "*.*")))
+    output_file = output_file.name
+    header = ['Column', 'Row', 'Value']
+    with open(output_file, 'w', newline='') as filewriter:
+        csvWriter = csv.writer(filewriter)
+        csvWriter.writerow(header)
+        for row in range(outW):
+            for col in range(outH):
+                data = outImage[row][col]
+                row_list = [row, col, data]
+                csvWriter.writerow(row_list)
+    subWindow = Toplevel(window)
+    pLabel = Label(subWindow, text='Save OK')
+    def choice():
+        subWindow.destroy()
+    button = Button(subWindow, text='확인', command=choice)
+    pLabel.pack()
+    button.pack()
+
+def loadCSV(fname):
+    global window, canvas, paper, filename, inImage, outImage, inW, inH, outW, outH
+    fsize = -1
+    fp = open(fname, 'r')
+    for f in fp:
+        fsize += 1
+    fp.close()
+    inH = inW = int(math.sqrt(fsize))  # 입력메모리 크기 결정! (중요)
+    inImage = [];
     tmpList = []
+    for i in range(inH):  # 입력메모리 확보(0으로 초기화)
+        tmpList = []
+        for k in range(inW):
+            tmpList.append(0)
+        inImage.append(tmpList)
+    # 파일 --> 메모리로 데이터 로딩
+    fp = open(fname, 'r')  # 파일 열기(바이너리 모드)
+    csvFP = csv.reader(fp)
+    next(csvFP)
+    for row_list in csvFP:
+        row = int(row_list[0])
+        col = int(row_list[1])
+        if len(row_list[2]) > 4:
+            value = row_list[2][1:-1].split()  # string 상태의 RGB LIST를 다시 LIST 형태로 변환
+            value = np.array(value, dtype=np.int32) # string을 int32으로 타입 변환
+            global gif
+            gif = True
+        else:
+            value = int(row_list[2])
+        inImage[row][col] = value
+    fp.close()
+    
+def openCSV():
+    global window, canvas, paper, filename, inImage, outImage, inW, inH, outW, outH
+    filename = askopenfilename(parent=window,
+                               filetypes=(("CSV파일", "*.csv"), ("모든파일", "*.*")))
+    loadCSV(filename)  # 파일 --> 입력메모리
+    equal()  # 입력메모리--> 출력메모리
+    
+def saveSQLite():
+    global window, canvas, paper, filename, inImage, outImage, inW, inH, outW, outH
+    global input_file
+    saveFp = asksaveasfilename(parent=window)
+    con = sqlite3.connect(saveFp)  # 데이터베이스 지정(또는 연결)
+    cur = con.cursor()  # 연결 통로 생성 (쿼리문을 날릴 통로)
+    # 열이름 리스트 만들기
+    inImage = outImage.copy()
+    fname = os.path.basename(filename).split(".")[0]
+    try:
+        sql = "DELETE FROM imageTable WHERE filename = '" + fname + "'"
+        cur.execute(sql)
+    except:
+        pass
+    try:
+        sql = "CREATE TABLE imageTable(filename CHAR(20), resolution smallint" + \
+              ", row  smallint,  col  smallint, value CHAR(20))"
+        cur.execute(sql)
+        con.commit()
+    except:
+        pass
+    for i in range(inW):
+        for k in range(inH):
+            sql = "INSERT INTO imageTable VALUES('" + fname + "'," + str(inW) + \
+                  "," + str(i) + "," + str(k) + "," + "'" + str(inImage[i][k]) + "'" + ")"
+            cur.execute(sql)  # str은 ' ' 앞뒤로 중요 (query)
+    con.commit()
+    cur.close()
+    con.close()  # 데이터베이스 연결 종료
+    subWindow = Toplevel(window)
+    pLabel = Label(subWindow, text='Save OK')
+    def choice():
+        subWindow.destroy()
+    button = Button(subWindow, text='확인', command=choice)
+    pLabel.pack()
+    button.pack()
+    
+def loadSQLite():
+    global window, canvas, paper, filename, inImage, outImage, inW, inH, outW, outH
+    openFp = askopenfilename(parent=window)
+    con = sqlite3.connect(openFp)  # 데이터베이스 지정(또는 연결)
+    cur = con.cursor()  # 연결 통로 생성 (쿼리문을 날릴 통로)
+    inImage = []
+    try:
+        sql = "SELECT DISTINCT filename, resolution FROM imageTable"
+        cur.execute(sql)
+        tableNameList = []
+        while True:
+            row = cur.fetchone()
+            if row == None:
+                break
+            tableNameList.append(row[0] + ":" + str(row[1]))
+        ##
+        def selectTable():
+            global window, filename, inImage, inW, inH, outW, outH
+            index = listbox.curselection()[0]
+            subWindow.destroy()
+            fname, res = tableNameList[index].split(':')
+            filename = fname
+            sql = "SELECT * FROM imageTable WHERE filename = " + "'" + fname + "'"
+            cur.execute(sql)
+            row = cur.fetchone()
+            inW = inH = int(row[1])
+            tmpList = []
+            for i in range(inH):
+                tmpList = []
+                for k in range(inW):
+                    tmpList.append(0)
+                inImage.append(tmpList)
+            for i in range(inW * inH):
+                if len(row[4]) > 4:
+                    inImage[int(row[2])][int(row[3])] = row[4][1:-1].split() # str을 다시 list로 (rgb)
+                    global gif
+                    gif = True
+                else:
+                    inImage[int(row[2])][int(row[3])] = int(row[4])
+                row = cur.fetchone()
+            inImage = np.array(inImage, dtype=np.int32)
+            cur.close()
+            con.close()
+            equal()
+            ##
+        subWindow = Toplevel(window)
+        listbox = Listbox(subWindow)
+        button = Button(subWindow, text='선택', command=selectTable)
+        listbox.pack()
+        button.pack()
+        for sName in tableNameList:
+            listbox.insert(END, sName)
+        subWindow.lift()
+        ##
+    except:
+        cur.close()
+        con.close()
+        print("error")
+        ##
+
+def savemySql():
+    global window, canvas, paper, filename, inImage, outImage, inW, inH, outW, outH
+    # DB쿼리 / imageDB 생성
+    ip = askstring("ip주소", "192.168.226.131")
+    userName = askstring("user name", "DB에서 생성된 유저")
+    password = askstring("password", "password: 1234")
+    db = askstring("DB name", "사용할 DB")
+    con = pymysql.connect(host=ip, user=userName, password=password, db=db, charset='utf8')
+    cur = con.cursor()  # 연결 통로 생성 (쿼리문을 날릴 통로)
+    # 열이름 리스트 만들기
+    inImage = outImage.copy()  # *변화된 outImage를 inImage로 변환
+    fname = os.path.basename(filename).split(".")[0]
+    sql = "DELETE FROM imageTable WHERE filename = '" + fname + "'"  # 기존 데이터 삭제
+    try:
+        #        print(sql)
+        cur.execute(sql)
+        con.commit()  # commit 중요
+    except:
+        pass
+    try:
+        sql = "CREATE TABLE imageTable( filename CHAR(20), resolution smallint" + \
+              ", row  smallint,  col  smallint, value  char(20))"
+        cur.execute(sql)
+    except:
+        pass
+
+    for i in range(inW):
+        for k in range(inH):
+            sql = "INSERT INTO imageTable VALUES('" + fname + "'," + str(inW) + \
+                  "," + str(i) + "," + str(k) + "," + "'" + str(inImage[i][k]) + "'" + ")"
+            cur.execute(sql)
+    con.commit()
+    cur.close()
+    con.close()  # 데이터베이스 연결 종료
+    subWindow = Toplevel(window)
+    pLabel = Label(subWindow, text='Save OK')
+    def choice():
+        subWindow.destroy()
+    button = Button(subWindow, text='확인', command=choice)
+    pLabel.pack()
+    button.pack()
+    
+def loadmySql():
+    global window, canvas, paper, filename, inImage, outImage, inW, inH, outW, outH
+    # pymysql 연결 // linux >> DB 연결
+    ip = askstring("ip주소", "192.168.226.131")
+    userName = askstring("user name", "DB에서 생성된 유저")
+    password = askstring("password", "password: 1234")
+    db = askstring("DB name", "사용할 DB")
+    con = pymysql.connect(host=ip, user=userName, password=password, db=db, charset='utf8')
+    cur = con.cursor()  # 연결 통로 생성 (쿼리문을 날릴 통로)
+    inImage = []
+    try:
+        # 중복치 제거 후 수집 >> distinct
+        sql = "SELECT DISTINCT filename, resolution FROM imageTable"
+        cur.execute(sql)
+        tableNameList = []
+        while True:
+            row = cur.fetchone()
+            if row == None:
+                break
+            tableNameList.append(row[0] + ":" + str(row[1]))
+        ##
+        def selectTable():
+            global window, filename, inImage, inW, inH, outW, outH
+            index = listbox.curselection()[0]
+            subWindow.destroy()
+            fname, res = tableNameList[index].split(':')
+            filename = fname
+            sql = "SELECT * FROM imageTable WHERE filename = " + "'" + fname + "'"
+            cur.execute(sql)
+            row = cur.fetchone()
+            inW = inH = int(row[1])
+            tmpList = []
+            for i in range(inH):
+                tmpList = []
+                for k in range(inW):
+                    tmpList.append(0)
+                inImage.append(tmpList)
+            for i in range(inW * inH):
+                # ROW = [filename, resolution, rownum, colnum, grayscale]
+                if len(row[4]) > 4:
+                    inImage[int(row[2])][int(row[3])] = row[4][1:-1].split()
+                    global gif
+                    gif = True
+                else:
+                    inImage[int(row[2])][int(row[3])] = int(row[4])
+                row = cur.fetchone()
+            inImage = np.array(inImage, dtype=np.int32)
+            cur.close()
+            con.close()
+            equal()
+            ##
+        subWindow = Toplevel(window)
+        listbox = Listbox(subWindow)
+        button = Button(subWindow, text='선택', command=selectTable)
+        listbox.pack()
+        button.pack()
+        for sName in tableNameList:
+            listbox.insert(END, sName)
+        subWindow.lift()
+        ##
+    except:
+        cur.close()
+        con.close()
+        print("error")
+
+def sqlExcel1():
+    global window, canvas, paper, filename, inImage, outImage, inW, inH, outW, outH
+    # save할 파일 결정
+    outfilename = asksaveasfile(parent=window, mode='wb',
+                                defaultextension="*.xlsx", filetypes=(("xlsx파일", "*.xlsx"), ("모든파일", "*.*")))
+    wb = Workbook(outfilename)
+    ws = wb.add_worksheet(os.path.basename(filename))
+    with open(filename, 'rb') as fReader:
+        for i in range(inW):
+            for j in range(inH):
+                data = inImage[i][j]  # 저장되어 있던 inImage에서 data 추출
+                ws.write(i, j, str(data))  # index마다 쓰기
+    wb.close()
+    subWindow = Toplevel(window)
+    pLabel = Label(subWindow, text='Save OK')
+    def choice():
+        subWindow.destroy()
+    button = Button(subWindow, text='확인', command=choice)
+    pLabel.pack()
+    button.pack()
+    
+def sqlExcel2():
+    global window, canvas, paper, filename, inImage, outImage, inW, inH, outW, outH
+    outfilename = asksaveasfile(parent=window, mode='wb',
+                                defaultextension="*.xlsx", filetypes=(("xlsx파일", "*.xlsx"), ("모든파일", "*.*")))
+    wb = Workbook(outfilename)
+    ws = wb.add_worksheet(os.path.basename(filename))
+    with open(filename, 'rb') as fReader:
+        # 워크시트의 열 너비 / 행 높이 지정
+        ws.set_column(0, inW, 1.0)  # 0.34
+        for row in range(inH):
+            ws.set_row(row, 9.5)  # 0.35
+        for i in range(inW):
+            for j in range(inH):
+                data = inImage[i][j]
+                if data  or 'str' in type(data):
+                    if data > 15:
+                        hexStr = '#' + (hex(data)[2:]) * 3
+                    else:
+                        hexStr = '#' + ('0' + hex(data)[2:]) * 3
+                else:
+                    if data[0] <= 15:  # 15 이하일 경우, 1자리 수이기 때문에 0을 추가
+                        hexStr = '#' + ('0' + hex(data[0])[2:])
+                    else:
+                        hexStr = '#' + (hex(data[0])[2:])  # 16진수 변환 후, R(2자리)
+                    if data[1] <= 15:
+                        hexStr += ('0' + hex(data[1])[2:])  # G(2자리)
+                    else:
+                        hexStr += hex(data[1])[2:]
+                    if data[2] <= 15:
+                        hexStr += ('0' + hex(data[2])[2:])  # B(2자리)
+                    else:
+                        hexStr += hex(data[2])[2:]
+                cell_format = wb.add_format()  # RGB코드는 #을 앞에
+                cell_format.set_bg_color(hexStr)
+                ws.write(i, j, '', cell_format)
+    wb.close()
+    subWindow = Toplevel(window)
+    pLabel = Label(subWindow, text='Save OK')
+    def choice():
+        subWindow.destroy()
+    button = Button(subWindow, text='확인', command=choice)
+    pLabel.pack()
+    button.pack()
+
+def sqlExcel3():
+    global window, canvas, paper, filename, inImage, outImage, inW, inH, outW, outH
+    inImage = []
+    input_file = askopenfilename(parent=window, filetypes=(("EXCEL파일", "*.xls;*.xlsx"), ("모든파일", "*.*")))
+    workbook = xlrd.open_workbook(input_file)
+    sheetCount = workbook.nsheets
+    for sheet in workbook.sheets():
+        sRow = sheet.nrows
+        sCol = sheet.ncols
+        for i in range(sRow):
+            tmpList = []
+            for j in range(sCol):
+                if len(sheet.cell_value(i,j)) > 4:
+                    value = sheet.cell_value(i, j)[1:-1].split()
+                    global gif
+                    gif = True
+                else:
+                    value = sheet.cell_value(i, j)
+                tmpList.append(value)
+            inImage.append(tmpList)
+    inImage = np.array(inImage, dtype=np.int32)
+    inW = len(inImage)
+    inH = len(inImage[0])
+    equal()
+    
+def a_histogram_plt():
+    global window, canvas, paper, filename, inImage, outImage, inW, inH, outW, outH
+    if gif:
+        a_histogram_plt_gif()
+        return
+    countList = [0] * 256
+    normList = [0] * 256
+    for i in range(outH):
+        for k in range(outW):
+            value = outImage[i][k]
+            countList[value] += 1
+    plt.plot(countList)
+    plt.show()
+    
+def a_histogram_plt_gif():
+    global window, canvas, paper, filename, inImage, outImage, inW, inH, outW, outH
+    countListR, countListG, countListB = [0] * 256, [0] * 256, [0] * 256
+    for i in range(outH):
+        for k in range(outW):
+            r, g, b = outImage[i][k][0], outImage[i][k][1], outImage[i][k][2]
+            countListR[r] += 1
+            countListG[g] += 1
+            countListB[b] += 1
+    plt.ion()
+    plt.plot(countListR, 'r')
+    plt.plot(countListG, 'g')
+    plt.plot(countListB, 'b')
+    plt.show()
+    
+
+def stretch():
+    global window, canvas, paper, filename, inImage, outImage, inW, inH, outW, outH
+    if gif:
+        stretch_gif()
+        return
+    maxVal, minVal, high = 0, 255, 255
+    for i in range(inH):
+        for j in range(inW):
+            data = inImage[i][j]
+            if data > maxVal:
+                maxVal = data
+            if data < minVal:
+                minVal = data
+    for i in range(inH):
+        for j in range(inW):
+            value = int((inImage[i][j] - minVal) / (maxVal - minVal) * high)
+            if value < 0:
+                value = 0
+            elif value > 255:
+                value = 255
+            inImage[i][j] = value
+    equal()
+
+def stretch_gif():
+    global window, canvas, paper, filename, inImage, outImage, inW, inH, outW, outH
+    maxValR, maxValG, maxValB, minValR, minValG, minValB, high = 0, 0, 0, 255, 255, 255, 255
+    for i in range(inH):
+        for j in range(inW):
+            dataR, dataG, dataB = inImage[i][j][0], inImage[i][j][1], inImage[i][j][2]
+            if dataR > maxValR:
+                maxValR = dataR
+            if dataG > maxValG:
+                maxValG = dataG
+            if dataB > maxValB:
+                maxValB = dataB
+            if dataR < minValR:
+                minValR = dataR
+            if dataG < minValG:
+                minValG = dataG
+            if dataB < minValB:
+                minValB = dataB
+    for i in range(inH):
+        for j in range(inW):
+            valueR = int((inImage[i][j][0] - minValR) / (maxValR - minValR) * high)
+            valueG = int((inImage[i][j][1] - minValG) / (maxValG - minValG) * high)
+            valueB = int((inImage[i][j][2] - minValB) / (maxValB - minValB) * high)
+            outImage[i][j] = [valueR, valueG, valueB]
+            outImage[i][j][outImage[i][j] > 255] = 255
+            outImage[i][j][outImage[i][j] < 0] = 0
+    display_gif()
+    
+def endin():
+    global window, canvas, paper, filename, inImage, outImage, inW, inH, outW, outH
+    if gif:
+        endin_gif()
+        return
+    maxVal, minVal, high = 0, 255, 255
+    for i in range(inH):
+        for j in range(inW):
+            data = inImage[i][j]
+            if data > maxVal:
+                maxVal = data
+            if data < minVal:
+                minVal = data
+    limit = askinteger('endin', '범위', minvalue=1, maxvalue=127)
+    maxVal -= limit
+    minVal += limit
+    for i in range(inH):
+        for j in range(inW):
+            value = int((inImage[i][j] - minVal) / (maxVal - minVal) * high)
+            if value < 0:
+                value = 0
+            elif value > 255:
+                value = 255
+            inImage[i][j] = value
+    equal()
+    
+def endin_gif():
+    global window, canvas, paper, filename, inImage, outImage, inW, inH, outW, outH
+    maxValR, maxValG, maxValB, minValR, minValG, minValB, high = 0, 0, 0, 255, 255, 255, 255
+    for i in range(inH):
+        for j in range(inW):
+            dataR, dataG, dataB = inImage[i][j][0], inImage[i][j][1], inImage[i][j][2]
+            if dataR > maxValR:
+                maxValR = dataR
+            if dataG > maxValG:
+                maxValG = dataG
+            if dataB > maxValB:
+                maxValB = dataB
+            if dataR < minValR:
+                minValR = dataR
+            if dataG < minValG:
+                minValG = dataG
+            if dataB < minValB:
+                minValB = dataB
+    limit = askinteger('endin', '범위', minvalue=1, maxvalue=127)
+    maxValR -= limit
+    maxValG -= limit
+    maxValB -= limit
+    minValR += limit
+    minValG += limit
+    minValB += limit
+    for i in range(inH):
+        for j in range(inW):
+            valueR = int((inImage[i][j][0] - minValR) / (maxValR - minValR) * high)
+            valueG = int((inImage[i][j][1] - minValG) / (maxValG - minValG) * high)
+            valueB = int((inImage[i][j][2] - minValB) / (maxValB - minValB) * high)
+            outImage[i][j] = [valueR, valueG, valueB]
+            outImage[i][j][outImage[i][j] > 255] = 255
+            outImage[i][j][outImage[i][j] < 0] = 0
+    display_gif()
+    
+def equalize():
+    global window, canvas, paper, filename, inImage, outImage, inW, inH, outW, outH
+    if gif:
+        equalize_gif()
+        return
+    maxVal, minVal, high = 0, 255, 255
+    hist = [0] * 255;
+    cum = [0] * 255;
+    norm = [0] * 255
+    outW = inW;
+    outH = inH;
+    outImage = [];
+    tmpList = []
+    for i in range(outH):  # 출력메모리 확보(0으로 초기화)
+        tmpList = []
+        for k in range(outW):
+            tmpList.append(0)
+        outImage.append(tmpList)
+    for i in range(inH):
+        for j in range(inW):
+            value = inImage[i][j]
+            hist[value] += 1
+    sVal = 0
+    for i in range(len(hist)):
+        sVal += hist[i]
+        cum[i] = sVal
+    for i in range(len(cum)):
+        norm[i] = cum[i] / (outW * outH) * high
+    for i in range(inH):
+        for j in range(inW):
+            index = inImage[i][j]
+            outImage[i][j] = int(norm[index])
+            print(inImage[i][j], outImage[i][j])
+            if outImage[i][j] < 0:
+                outImage[i][j] = 0
+            elif outImage[i][j] > 255:
+                outImage[i][j] = 255
+    display()
+    
+def equalize_gif():
+    global window, canvas, paper, filename, inImage, outImage, inW, inH, outW, outH
+    maxValR, maxValG, maxValB, minValR, minValG, minValB, high = 0, 0, 0, 255, 255, 255, 255
+    histR, histG, histB = [0] * 256, [0] * 256, [0] * 256
+    cumR, cumG, cumB = [0] * 256, [0] * 256, [0] * 256
+    normR, normG, normB = [0] * 256, [0] * 256, [0] * 256
+    outW = inW;  outH = inH;
+    outImage = [];   tmpList = []
+    for i in range(outH):  # 출력메모리 확보(0으로 초기화)
+        tmpList = []
+        for k in range(outW):
+            tmpList.append([0, 0, 0])
+        outImage.append(tmpList)
+    for i in range(outH):
+        for k in range(outW):
+            r, g, b = inImage[i][k][0], inImage[i][k][1], inImage[i][k][2]
+            histR[r] += 1
+            histG[g] += 1
+            histB[b] += 1
+    sValR, sValG, sValB = 0, 0, 0
+    for i in range(len(histR)):
+        sValR += histR[i]
+        sValG += histG[i]
+        sValB += histB[i]
+        cumR[i] = sValR
+        cumG[i] = sValG
+        cumB[i] = sValB
+    for i in range(len(cumR)):
+        normR[i] = cumR[i] / (outW * outH) * high
+        normG[i] = cumG[i] / (outW * outH) * high
+        normB[i] = cumB[i] / (outW * outH) * high
+    for i in range(inH):
+        for j in range(inW):
+            index = inImage[i][j]
+            outImage[i][j] = np.array([int(normR[index[0]]), int(normG[index[1]]), int(normB[index[2]])], dtype=np.int32)
+            outImage[i][j][outImage[i][j] > 255] = 255
+            outImage[i][j][outImage[i][j] < 0] = 0
+    display_gif()
+    
+def rotate():
+    global inImage, outImage, inH, inW, outH, outW, window, canvas, paper, filename
+    if gif:
+        rotate_gif()
+        return
+    degree = askinteger('각도', '값 입력', minvalue=0, maxvalue=360)
+    # 출력 파일의 크기 결정.
+    radian90 = (90 - degree) * np.pi / 180.0
+    radian = degree * np.pi / 180.0
+    outW = int(inH * math.cos(radian90) + inW * math.cos(radian))
+    outH = int(inH * math.cos(radian) + inW * math.cos(radian90))
+    # outW = inW; outH = inH
+    # 출력 영상 메모리 확보
+    outImage = []
+    for i in range(0, outW):
+        tmpList = []
+        for k in range(0, outH):
+            tmpList.append(0)
+        outImage.append(tmpList)
+    # inImage2 크기를 outImage와 동일하게
+    inImage2 = []
+    for i in range(0, outW):
+        tmpList = []
+        for k in range(0, outH):
+            tmpList.append(255)
+        inImage2.append(tmpList)
+    # inImage --> inImage2의 중앙으로
+    gap = int((outW - inW) / 2)
+    for i in range(0, inW):
+        for k in range(0, inH):
+            inImage2[i + gap][k + gap] = inImage[i][k]
+    cx = int(outW / 2)
+    cy = int(outH / 2)
+    for i in range(0, outW):
+        for k in range(0, outH):
+            xs = i
+            ys = k
+            xd = int(math.cos(radian) * (xs - cx)
+                     - math.sin(radian) * (ys - cy)) + cx
+            yd = int(math.sin(radian) * (xs - cx)
+                     + math.cos(radian) * (ys - cy)) + cy
+            if 0 <= xd < outW and 0 <= yd < outH:
+                outImage[xs][ys] = inImage2[xd][yd]
+            else:
+                outImage[xs][ys] = 255
+    display()
+    
+def rotate_gif():
+    global inImage, outImage, inH, inW, outH, outW, window, canvas, paper, filename
+    degree = askinteger('각도', '값 입력', minvalue=0, maxvalue=360)
+    # 출력 파일의 크기 결정.
+    radian90 = (90 - degree) * np.pi / 180.0
+    radian = degree * np.pi / 180.0
+    outW = int(inH * math.cos(radian90) + inW * math.cos(radian))
+    outH = int(inH * math.cos(radian) + inW * math.cos(radian90))
+    # outW = inW; outH = inH
+    # 출력 영상 메모리 확보
+    outImage = []
+    for i in range(0, outW):
+        tmpList = []
+        for k in range(0, outH):
+            tmpList.append([0, 0, 0])
+        outImage.append(tmpList)
+    # inImage2 크기를 outImage와 동일하게
+    inImage2 = []
+    for i in range(0, outW):
+        tmpList = []
+        for k in range(0, outH):
+            tmpList.append([255, 255, 255])
+        inImage2.append(tmpList)
+    # inImage --> inImage2의 중앙으로
+    gap = int((outW - inW) / 2)
+    for i in range(0, inW):
+        for k in range(0, inH):
+            inImage2[i + gap][k + gap] = inImage[i][k]
+    cx = int(outW / 2)
+    cy = int(outH / 2)
+    for i in range(0, outW):
+        for k in range(0, outH):
+            xs = i
+            ys = k
+            xd = int(math.cos(radian) * (xs - cx)
+                     - math.sin(radian) * (ys - cy)) + cx
+            yd = int(math.sin(radian) * (xs - cx)
+                     + math.cos(radian) * (ys - cy)) + cy
+            if 0 <= xd < outW and 0 <= yd < outH:
+                outImage[xs][ys] = inImage2[xd][yd]
+            else:
+                outImage[xs][ys] = [255, 255, 255]
+    display_gif()
+    
+def morphing():
+    global window, canvas, paper, filename, inImage, outImage, inW, inH, outW, outH
+    if gif:
+        morphing_gif()
+        return
+    outW, outH = inW, inH
+    filename2 = askopenfilename(parent=window,
+                               filetypes=(("RAW파일", "*.raw"), ("모든파일", "*.*")))
+    if filename2 == '' or filename2 == None:
+        return
+    inImage2 = []
+    fsize2 = os.path.getsize(filename2)
+    inH2 = inW2 = int(math.sqrt(fsize2))
+    if inH2 != inH:
+        return
+    outImage = []
+    fp2 = open(filename2, 'rb')
+    for i in range(outH):
+        tmpList = []
+        for j in range(outW):
+            data = int(ord(fp2.read(1)))
+            tmpList.append(data)
+        inImage2.append(tmpList)
+    fp2.close()
+    for i in range(outH):
+        tmpList = []
+        for j in range(outW):
+            tmpList.append(0)
+        outImage.append(tmpList)
+    value = askinteger('합성 비율', '두 번째 영상 가중치', minvalue=1, maxvalue=100)
+    w1 = (1 - value/100)
+    w2 = value/100
+    for i in range(outH):
+        for j in range(outW):
+            data = int(inImage[i][j] * w1) + int(inImage2[i][j] * w2)
+            if data > 255:
+                data = 255
+            elif data < 0:
+                data = 0
+            outImage[i][j] = data
+    display()
+    
+def morphing_gif():
+    global window, canvas, paper, filename, inImage, outImage, inW, inH, outW, outH
+    outW, outH = inW, inH
+    filename2 = askopenfilename(parent=window,
+                               filetypes=(("그림파일", "*.raw;*.gif;*.jpg;*.png;*.tif;*.bmp"), ("모든파일", "*.*")))
+    if filename2 == '' or filename2 == None:
+        return
+    photo = Image(filename=filename2)
+    inImage2 = []
+    fsize2 = os.path.getsize(filename2)
+    inH2 = inW2 = inW
+    outImage = []
+    fp2 = open(filename2, 'rb')
     for i in range(inH):
         tmpList = []
         for k in range(inW) :
             tmpList.append(np.array([0, 0, 0]))
-        newImage.append(tmpList)
+        inImage2.append(tmpList)
+    blob = photo.make_blob(format='RGB')  
     for  i  in range(inH):
         for  k  in  range(inW):
-            r, g, b = photo.get(k, i)
-            newImage[i][k] = [r, g, b]
-    newImage = np.array(newImage)
-    photo = None
-    inImage = (np.array(oldImage) + np.array(newImage)) / 2
-    outImage = np.array(inImage[:], dtype=np.int32)
+            r, g, b = blob[(i * 3 * inH) + (k * 3) + 0], blob[(i * 3 * inH) + (k * 3) + 1], blob[
+                (i * 3 * inH) + (k * 3) + 2]
+            inImage2[i][k] = [r, g, b]
+    inImage2 = np.array(inImage2)
+    fp2.close()
+    for i in range(outH):
+        tmpList = []
+        for j in range(outW):
+            tmpList.append([0, 0, 0])
+        outImage.append(tmpList)
+    value = askinteger('합성 비율', '두 번째 영상 가중치', minvalue=1, maxvalue=100)
+    w1 = (1 - value/100)
+    w2 = value/100
+    for i in range(outH):
+        for j in range(outW):
+            data = [int(inImage[i][j][0] * w1) + int(inImage2[i][j][1] * w2),
+                    int(inImage[i][j][1] * w1) + int(inImage2[i][j][1] * w2),
+                    int(inImage[i][j][2] * w1) + int(inImage2[i][j][2] * w2)]
+            data = np.array(data, dtype=np.int32)
+            data[data < 0] = 0
+            data[data > 255] = 255
+            outImage[i][j] = data
     display_gif()
+    photo = None
+
+def bigData01():
+    '''
+    폴더 안의 raw 파일들을 모두 DB로 저장
+    '''
+    global window, canvas, paper, filename, inImage, inW, inH
+    saveFp = asksaveasfilename(parent=window)
+    con = sqlite3.connect(saveFp)
+    cur = con.cursor()
+    dirName = askdirectory()
+    file_list = []
+    for i in range(6):
+        file_list = glob.glob(os.path.join(dirName, "*.raw"))
+        if file_list != []: break
+        file_list = glob.glob(os.path.join(dirName, "*.png"))
+        if file_list != []: break
+        file_list = glob.glob(os.path.join(dirName, "*.jpg"))
+        if file_list != []: break
+        file_list = glob.glob(os.path.join(dirName, "*.bmp"))
+        if file_list != []: break
+        file_list = glob.glob(os.path.join(dirName, "*.tif"))
+        if file_list != []: break
+        file_list = glob.glob(os.path.join(dirName, "*.gif"))
+    for input_file in file_list:
+        if input_file[-3:] != "raw":
+            global gif
+            gif = True
+            filename = input_file
+            loadImage_gif(input_file)
+        else:
+            filename = input_file
+            loadImage(input_file)
+        fsize = os.path.getsize(input_file)  # raw파일 size
+        fname = os.path.basename(filename).split(".")[0]
+        try:
+            sql = "DELETE FROM imageTable WHERE filename = '" + fname + "'"
+            cur.execute(sql)
+        except:
+            pass
+        try:
+            sql = "CREATE TABLE imageTable(filename CHAR(20), resolution smallint" + \
+                  ", row  smallint,  col  smallint, value CHAR(20))"
+            cur.execute(sql)
+            con.commit()
+        except:
+            pass
+        for i in range(inW):
+            for k in range(inH):
+                if gif:
+                    sql = "INSERT INTO imageTable VALUES('" + fname + "'," + str(inW) + \
+                    "," + str(i) + "," + str(k) + "," + "'" + str(inImage[i][k]) + "'" + ")"
+                else:
+                    sql = "INSERT INTO imageTable VALUES('" + fname + "'," + str(inW) + \
+                    "," + str(i) + "," + str(k) + "," + str(inImage[i][k]) + ")"
+                cur.execute(sql)  # str은 ' ' 앞뒤로 중요 (query)
+    con.commit()
+    cur.close()
+    con.close()  # 데이터베이스 연결 종료
+    subWindow = Toplevel(window)
+    pLabel = Label(subWindow, text='Save OK')
+    def choice():
+        subWindow.destroy()
+    button = Button(subWindow, text='확인', command=choice)
+    pLabel.pack()
+    button.pack()
+    
+def bigData02():
+    global window, canvas, paper, filename, inImage, inW, inH
+    ip = askstring("ip주소", "192.168.226.131")
+    userName = askstring("user name", "DB에서 생성된 유저")
+    password = askstring("password", "password: 1234")
+    db = askstring("DB name", "사용할 DB")
+    con = pymysql.connect(host=ip, user=userName, password=password, db=db, charset='utf8')
+    cur = con.cursor()
+    dirName = askdirectory()
+    file_list = []
+    for i in range(6):
+        file_list = glob.glob(os.path.join(dirName, "*.raw"))
+        if file_list != []: break
+        file_list = glob.glob(os.path.join(dirName, "*.png"))
+        if file_list != []: break
+        file_list = glob.glob(os.path.join(dirName, "*.jpg"))
+        if file_list != []: break
+        file_list = glob.glob(os.path.join(dirName, "*.bmp"))
+        if file_list != []: break
+        file_list = glob.glob(os.path.join(dirName, "*.tif"))
+        if file_list != []: break
+        file_list = glob.glob(os.path.join(dirName, "*.gif"))
+    for input_file in file_list:
+        if input_file[-3:] != "raw":
+            global gif
+            gif = True
+            filename = input_file
+            loadImage_gif(input_file)
+        else:
+            filename = input_file
+            loadImage(input_file)
+        fsize = os.path.getsize(input_file)  # raw파일 size
+        fname = os.path.basename(filename).split(".")[0]
+        try:
+            sql = "DELETE FROM imageTable WHERE filename = '" + fname + "'"
+            cur.execute(sql)
+        except:
+            pass
+        try:
+            sql = "CREATE TABLE imageTable(filename CHAR(20), resolution smallint" + \
+                  ", row  smallint,  col  smallint, value CHAR(20))"
+            cur.execute(sql)
+            con.commit()
+        except:
+            pass
+        for i in range(inW):
+            for k in range(inH):
+                if gif:
+                    sql = "INSERT INTO imageTable VALUES('" + fname + "'," + str(inW) + \
+                    "," + str(i) + "," + str(k) + "," + "'" + str(inImage[i][k]) + "'" + ")"
+                else:
+                    sql = "INSERT INTO imageTable VALUES('" + fname + "'," + str(inW) + \
+                    "," + str(i) + "," + str(k) + "," + str(inImage[i][k]) + ")"
+                cur.execute(sql)  # str은 ' ' 앞뒤로 중요 (query)
+    con.commit()
+    cur.close()
+    con.close()  # 데이터베이스 연결 종료
+    subWindow = Toplevel(window)
+    pLabel = Label(subWindow, text='Save OK')
+    def choice():
+        subWindow.destroy()
+    button = Button(subWindow, text='확인', command=choice)
+    pLabel.pack()
+    button.pack()
+    
+def drawSheet(cList) :
+    global csvList, cellList, window
+    if cellList == None or cellList == [] :
+        pass
+    else :
+        for row in cellList:
+            for col in row:
+                col.destroy()
+    rowNum = len(cList)
+    colNum = len(cList[0])
+    cellList = []
+    # 빈 시트 만들기
+    global status
+    status.destroy()
+    window.geometry(str(rowNum*60) + 'x' + str(colNum*60))
+    for i in range(0, rowNum):
+        tmpList = []
+        for k in range(0, colNum):
+            ent = Entry(window, text='')
+            tmpList.append(ent)
+            ent.grid(row=i, column=k)
+        cellList.append(tmpList)
+    # 시트에 리스트값 채우기. (= 각 엔트리에 값 넣기)
+    for i in range(0, rowNum):
+        for k in range(0, colNum):
+            cellList[i][k].insert(0, cList[i][k])
+
+def openCSV() :
+    global  csvList, filename
+    csvList = []
+    filename = askopenfilename(parent=window,
+                filetypes=(("CSV파일", "*.csv"), ("모든파일", "*.*")))
+    filereader = open(filename, 'r', newline='')
+    header = filereader.readline()
+    header = header.strip()  # 앞뒤 공백제거
+    header_list = header.split(',')
+    csvList.append(header_list)
+    for row in filereader:  # 모든행은 row에 넣고 돌리기.
+        row = row.strip()
+        row_list = row.split(',')
+        csvList.append(row_list)
+    drawSheet(csvList)
+    filereader.close()
+
+def  saveCSV() :
+    global csvList, filename
+    if csvList == [] :
+        return
+    saveFp = asksaveasfile(parent=window, mode='w', defaultextension='.csv',
+               filetypes=(("CSV파일", "*.csv"), ("모든파일", "*.*")))
+    filewriter = open(saveFp.name, 'w', newline='')
+    csvWrite = csv.writer(filewriter)
+    for  row_list  in  csvList :
+        csvWrite.writerow(row_list)
+    
+def openJSON() :
+    global  csvList, filename
+    inImage = []
+    filename = askopenfilename(parent=window,
+                filetypes=(("JSON파일", "*.json"), ("모든파일", "*.*")))
+    filereader = open(filename, 'r', newline='', encoding='utf-8')
+    jsonDic = json.load(filereader)
+    csvName = list(jsonDic.keys())
+    jsonList = jsonDic[csvName[0]]
+    # 헤더 추출
+    header_list = list(jsonList[0].keys())
+    csvList.append(header_list)
+    # 행들 추출
+    for tmpDic in jsonList:
+        tmpList = []
+        for header in header_list:
+            data = tmpDic[header]
+            tmpList.append(data)
+        inImage.append(tmpList)
+    drawSheet(csvList)
+    filereader.close()
+    
+def  saveJSON() :
+    global csvList, filename
+    if csvList == [] :
+        return
+    saveFp = asksaveasfile(parent=window, mode='w', defaultextension='.json',
+               filetypes=(("JSON파일", "*.json"), ("모든파일", "*.*")))
+    filewriter = open(saveFp.name, 'w', newline='')
+    # csvList --> jsonDic
+    fname = os.path.basename(filename).split(".")[0]
+    jsonDic = {}
+    jsonList = []
+    tmpDic = {}
+    header_list = csvList[0]
+    for i in range(1, len(csvList)) :
+        rowList = csvList[i]
+        tmpDic = {}
+        for k in range(0, len(rowList)) :
+            tmpDic[header_list[k]] = rowList[k]
+        jsonList.append(tmpDic)
+    jsonDic[fname] = jsonList
+    json.dump(jsonDic, filewriter, indent=4)
+    filewriter.close()
+
+def openExcel() :
+    global csvList, filename
+    csvList = []
+    filename = askopenfilename(parent=window,
+      filetypes=(("엑셀파일", "*.xls;*.xlsx"), ("모든파일", "*.*")))
+    workbook = xlrd.open_workbook(filename)
+    sheetCount = workbook.nsheets  # 속성
+    sheet1 = workbook.sheets()[0]
+    sheetName = sheet1.name
+    sRow = sheet1.nrows
+    sCol = sheet1.ncols
+    #print(sheetName, sRow, sCol)
+    for i  in range(sRow) :
+        tmpList = []
+        for k in range(sCol) :
+            value = sheet1.cell_value(i,k)
+            tmpList.append(value)
+        csvList.append(tmpList)
+    drawSheet(csvList)
+
+def saveExcel() :
+    global csvList, filename
+    if csvList == [] :
+        return
+    saveFp = asksaveasfile(parent=window, mode='w', defaultextension='.xls',
+               filetypes=(("Excel파일", "*.xls"), ("모든파일", "*.*")))
+    filename = saveFp.name
+    outWorkbook = xlwt.Workbook()
+    outSheet = outWorkbook.add_sheet('sheet1') # 이름을 추후에 지정하세요.
+    for i in range(len(csvList)) :
+        for k in range(len(csvList[i])) :
+            outSheet.write(i,k, csvList[i][k])
+    outWorkbook.save(filename)
+    
+def sqliteData01() :
+    global csvList, filename
+    saveFp = askopenfilename(parent=window)
+    con = sqlite3.connect(saveFp)  # 데이터베이스 지정(또는 연결)
+    cur = con.cursor()  # 연결 통로 생성 (쿼리문을 날릴 통로)
+    csvList = []
+    sql = "SELECT name FROM sqlite_master WHERE type='table'"
+    cur.execute(sql)
+    tableNameList = []
+    while True :
+        row = cur.fetchone()
+        if row == None:
+            break
+        tableNameList.append(row[0]);
+    def selectTable() :
+        selectedIndex = listbox.curselection()[0]
+        subWindow.destroy()
+        # 테이블의 열 목록 뽑기
+        # print(colNameList)
+        #colNameList = ["userID", "userName", "userAge"]
+        #csvList.append(colNameList)
+        sql = "SELECT * FROM " + tableNameList[selectedIndex]
+        cur.execute(sql)
+        while True:
+            row = cur.fetchone()
+            if row == None:
+                break
+            row_list = []
+            for ii in range(len(row)) :
+                row_list.append(row[ii])
+            csvList.append(row_list)
+            drawSheet(csvList)
+    subWindow = Toplevel(window)  # window의 하위로 지정
+    listbox = Listbox(subWindow)
+    button = Button(subWindow, text='선택', command=selectTable)
+    listbox.pack(); button.pack()
+    for  sName in tableNameList :
+        listbox.insert(END, sName)
+    subWindow.lift()
+
+def sqliteData02() :
+    global csvList, filename
+    saveFp = asksaveasfilename(parent=window)
+    con = sqlite3.connect(saveFp) # 데이터베이스 지정(또는 연결)
+    cur = con.cursor()  # 연결 통로 생성 (쿼리문을 날릴 통로)
+    # 열이름 리스트 만들기
+    colList = []
+    for data in csvList[0] :
+        colList.append(data.replace(' ', ''))
+    tableName = os.path.basename(filename).split(".")[0]
+    try:
+        sql = "CREATE TABLE " + tableName + "("
+        for colName in colList :
+            sql += colName + " CHAR(20),"
+        sql = sql[:-1]
+        sql += ")"
+        cur.execute(sql)
+    except:
+        pass
+    for i in range(1, len(csvList)) :
+        rowList = csvList[i]
+        sql = "INSERT INTO " +  tableName + " VALUES("
+        for row in rowList:
+            sql += "'" + row + "',"
+        sql = sql[:-1]
+        sql += ")"
+        cur.execute(sql)
+    con.commit()
+    cur.close()
+    con.close()  # 데이터베이스 연결 종료
+    subWindow = Toplevel(window)
+    pLabel = Label(subWindow, text='Save OK')
+    def choice():
+        subWindow.destroy()
+    button = Button(subWindow, text='확인', command=choice)
+    pLabel.pack()
+    button.pack()
+    
+def mySqlData01() :
+    global csvList, filename
+    csvList = []
+    ip = askstring("ip주소", "192.168.226.131")
+    userName = askstring("user name", "DB에서 생성된 유저")
+    password = askstring("password", "password: 1234")
+    db = askstring("DB name", "사용할 DB")
+    con = pymysql.connect(host=ip, user=userName, password=password, db=db, charset='utf8')
+    cur = con.cursor()
+    sql = "SELECT table_name FROM information_schema.tables WHERE table_schema = '" + db + "'"
+    cur.execute(sql)
+    tableNameList = []
+    while True:
+        row = cur.fetchone()
+        if row == None:
+            break
+        tableNameList.append(row[0])
+    def selectTable():
+        index = listbox.curselection()[0]
+        subWindow.destroy()
+        sql = "SELECT * FROM "
+        sql += tableNameList[index]
+        cur.execute(sql)
+        col = cur.description
+        colNameList = []
+        for cName in col:
+            colNameList.append(cName[0])
+        csvList.append(colNameList)
+        while True:
+            row = cur.fetchone()
+            if row == None:
+                break
+            csvList.append(list(row))
+        cur.close()
+        con.close()
+        drawSheet(csvList)
+    subWindow = Toplevel(window) # window의 하위 지정
+    listbox = Listbox(subWindow)
+    button = Button(subWindow, text="선택", command=selectTable)
+    listbox.pack()
+    button.pack()
+    for tName in tableNameList:
+        listbox.insert(END, tName)
+    subWindow.lift()
+    
+def mySqlData02():
+    global csvList, filename
+    ip = askstring("ip주소", "192.168.226.131")
+    userName = askstring("user name", "DB에서 생성된 유저")
+    password = askstring("password", "password: 1234")
+    db = askstring("DB name", "사용할 DB")
+    con = pymysql.connect(host=ip, user=userName, password=password, db=db, charset='utf8')
+    cur = con.cursor()
+    headerList = []
+    tableName = os.path.basename(filename)
+    tableName = tableName[:tableName.find(".")]
+    for header in csvList[0]:
+        headerList.append(header.replace(" ", ""))
+    sql = "CREATE TABLE "
+    sql += tableName + "("
+    for header in headerList:
+        sql += header + " CHAR(20), "
+    sql = sql[:-2]
+    sql += ");"
+    cur.execute(sql)
+    for i in range(1, len(csvList)):
+        rowList = csvList[i]
+        sql = "INSERT INTO " + tableName + " VALUES("
+        for row in rowList:
+            sql += "'" + row + "', "
+        sql = sql[:-2]
+        sql += ");"
+        cur.execute(sql)
+    con.commit()
+    cur.close()
+    con.close()
+    subWindow = Toplevel(window)
+    pLabel = Label(subWindow, text='Save OK')
+    def choice():
+        subWindow.destroy()
+    button = Button(subWindow, text='확인', command=choice)
+    pLabel.pack()
+    button.pack()
     
 ## 변수선언 init
 window, canvas, paper, filename = [None] * 4
@@ -1054,6 +2269,8 @@ photo, paper_copy, pLabel = None, None, None
 panYN, panYN_gif= False, False
 sx, sy, ex, ey = [0] * 4
 gif = False
+VIEW_X, VIEW_Y = 128, 128
+cellList,csvList = [], []
 
 ## main
 if __name__ == "__main__":
@@ -1062,6 +2279,8 @@ if __name__ == "__main__":
     window.title('J Photo 1.0')
     window.bind("<ButtonRelease-1>", mouseDrop)
     window.bind("<Button-1>", mouseClick)
+    status = Label(window, text='이미지 정보: ', bd=1, relief=SUNKEN, anchor=W)
+    status.pack(side=BOTTOM, fill=X)
     
     mainMenu = Menu(window)
     window.config(menu=mainMenu)
@@ -1070,11 +2289,19 @@ if __name__ == "__main__":
     fileMenu.add_command(label='열기', command=openFile)
     fileMenu.add_command(label='저장', command=saveFile)
     fileMenu.add_separator()
+    fileMenu.add_command(label='CSV열기', command=openCSV)
+    fileMenu.add_command(label='CSV저장', command=saveCSV)
+    fileMenu.add_separator()
+    fileMenu.add_command(label='JSON열기', command=openJSON)
+    fileMenu.add_command(label='JSON저장', command=saveJSON)
+    fileMenu.add_separator()
+    fileMenu.add_command(label='Excel열기', command=openExcel)
+    fileMenu.add_command(label='Excel저장', command=saveExcel)
+    fileMenu.add_separator()
     fileMenu.add_command(label='종료', command=exitFile)
     
     pixelMenu = Menu(mainMenu)
     mainMenu.add_cascade(labe='화소점처리', menu=pixelMenu)
-    pixelMenu.add_command(label='동일영상', command=equal)
     pixelMenu.add_command(label='밝게하기', command=lambda : addImage(1))
     pixelMenu.add_command(label="어둡게하기", command=lambda : addImage(2))
     pixelMenu.add_command(label='밝게하기(곱연산)', command=lambda: addImage(3))
@@ -1097,6 +2324,7 @@ if __name__ == "__main__":
     geoMenu.add_command(label='줌아웃', command=zoomOut)
     geoMenu.add_command(label='줌인(forward)', command=lambda: zoomIn(1))
     geoMenu.add_command(label='줌인(backward)', command=lambda: zoomIn(2))
+    geoMenu.add_command(label='회전(rotate)', command=rotate)
     
     areaMenu = Menu(mainMenu)
     mainMenu.add_cascade(label='화소영역처리', menu=areaMenu)
@@ -1112,11 +2340,44 @@ if __name__ == "__main__":
     analyzeMenu.add_command(label='평균값', command=lambda: a_average(1))
     analyzeMenu.add_command(label='절사평균', command=lambda: a_average(2))    
     analyzeMenu.add_command(label='최댓값&최솟값', command=a_minmax)
+    analyzeMenu.add_command(label='히스토그램', command=a_histogram_plt)
+    analyzeMenu.add_command(label='스트레칭', command=stretch)
+    analyzeMenu.add_command(label='엔드인', command=endin)
+    analyzeMenu.add_command(label='평활화', command=equalize)
     
     compareMenu = Menu(mainMenu)
     mainMenu.add_cascade(label='비교', menu=compareMenu)
     compareMenu.add_command(label='원본사진비교', command=display_copy)
     compareMenu.add_command(label='원본되돌리기', command=rollback)
-    compareMenu.add_command(label='사진합성하기', command=merge)
+    compareMenu.add_command(label='출력비율변경', command=display_geniune)
+    compareMenu.add_command(label='사진합성하기', command=morphing)
+    
+    otherMenu = Menu(mainMenu)
+    mainMenu.add_cascade(label='다른 포맷 처리', menu=otherMenu)
+    otherMenu.add_command(label='CSV 내보내기', command=saveCSV)
+    otherMenu.add_command(label='CSV 불러오기', command=openCSV)
+    otherMenu.add_separator()
+    otherMenu.add_command(label='SQLite 내보내기', command=saveSQLite)
+    otherMenu.add_command(label='SQLite 목록 불러오기', command=loadSQLite)
+    otherMenu.add_separator()
+    otherMenu.add_command(label='mySQL 내보내기', command=savemySql)
+    otherMenu.add_command(label='mySQL 목록 불러오기', command=loadmySql)
+    otherMenu.add_separator()
+    otherMenu.add_command(label='Excel 내보내기(화소)', command=sqlExcel1)
+    otherMenu.add_command(label='Excel 불러오기(화소)', command=sqlExcel3)
+    otherMenu.add_command(label='Excel 내보내기(음영)', command=sqlExcel2)
+    
+    bigDataMenu = Menu(mainMenu)
+    mainMenu.add_cascade(label='빅데이터 처리', menu=bigDataMenu)
+    bigDataMenu.add_command(label='SQLite 대용량 보내기', command=bigData01)
+    bigDataMenu.add_command(label='mySQL 대용량 보내기', command=bigData02)
+    
+    excelMenu = Menu(mainMenu)
+    mainMenu.add_cascade(label='Excel DB처리', menu=excelMenu)
+    excelMenu.add_command(label='SQLite 엑셀 읽기', command=sqliteData01)
+    excelMenu.add_command(label='SQLite 엑셀 쓰기', command=sqliteData02)
+    excelMenu.add_command(label='mySql 엑셀 읽기', command=mySqlData01)
+    excelMenu.add_command(label='mySql 엑셀 쓰기', command=mySqlData02)
+
     
     window.mainloop()
