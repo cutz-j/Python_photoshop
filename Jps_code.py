@@ -37,6 +37,8 @@ def openFile():
     global window, canvas, paper, filename,inImage, outImage,inW, inH, outW, outH, photo, gif, VIEW_X, VIEW_Y
     filename = askopenfilename(parent=window,
                                filetypes=(("그림파일", "*.raw;*.gif;*.jpg;*.png;*.tif;*.bmp"), ("모든파일", "*.*")))
+    if pLabel != None:
+        pLabel.destroy()
     if filename[-3:] != "raw":
         gif = True
         loadImage_gif(filename)
@@ -633,7 +635,7 @@ def display_copy_gif():
     pLabel.configure(image=paper_copy)
     
 def rollback_gif():
-    global window, canvas, paper, PLabel, filename, inImage, outImage, inW, inH, outW, outH, photo, paper_copy
+    global window, canvas, paper, filename, inImage, outImage, inW, inH, outW, outH, photo, paper_copy
     if pLabel != None:
         pLabel.destroy()
     loadImage_gif(filename)
@@ -1081,7 +1083,7 @@ def hsi2rgb(hsi):
             rgb[k][j] = np.array([r, g, b]) * i * 3
     return np.array(rgb, dtype=np.int32)
     
-def saveCSV():
+def saveRGBCSV():
     global window, canvas, paper, filename, inImage, outImage, inW, inH, outW, outH
     output_file = asksaveasfile(parent=window, mode='w',
                                 defaultextension="*.csv", filetypes=(("CSV파일", "*.csv"), ("모든파일", "*.*")))
@@ -2354,7 +2356,7 @@ if __name__ == "__main__":
     
     otherMenu = Menu(mainMenu)
     mainMenu.add_cascade(label='다른 포맷 처리', menu=otherMenu)
-    otherMenu.add_command(label='CSV 내보내기', command=saveCSV)
+    otherMenu.add_command(label='CSV 내보내기', command=saveRGBCSV)
     otherMenu.add_command(label='CSV 불러오기', command=openCSV)
     otherMenu.add_separator()
     otherMenu.add_command(label='SQLite 내보내기', command=saveSQLite)
