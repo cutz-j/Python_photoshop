@@ -20,6 +20,8 @@ import xlsxwriter
 import matplotlib.pyplot as plt
 import glob
 import json
+import tensorflow as tf
+import pandas as pd
 
 ## 함수 선언
 def loadImage(fname):
@@ -2263,6 +2265,81 @@ def mySqlData02():
     pLabel.pack()
     button.pack()
     
+def learnLinearR():
+    global csvList, filename
+    '''
+    linear R 학습 & 결과
+    '''
+    filename = askopenfilename(parent=window,
+      filetypes=(("데이터 파일", "*.xls;*.xlsx;*.csv;*.json;*.txt"), ("모든파일", "*.*")))
+    dataframe = pd.read_csv(filename, header=False, sep=",")
+    brt = askfloat('learning_rate', 'learning_rate', minvalue=0, maxvalue=2)
+    return
+    
+def predictLinearR():
+    global csvList, filename
+    '''
+    학습한 LR 예측
+    '''
+    return
+
+def learnBinaryL():
+    global csvList, filename
+    '''
+    이항분류 로지스틱 학습
+    '''
+    filename = askopenfilename(parent=window,
+      filetypes=(("데이터 파일", "*.xls;*.xlsx;*.csv;*.json;*.jpg;*.raw;*.png;*.txt"), ("모든파일", "*.*")))
+    return
+
+def predictBinaryL():
+    global csvList, filename
+    '''
+    이항분류 로지스틱 예측
+    '''
+    return
+
+def learnMultiL():
+    global csvList, filename
+    '''
+    다항분류 로지스틱 학습
+    '''
+    filename = askopenfilename(parent=window,
+      filetypes=(("데이터 파일", "*.xls;*.xlsx;*.csv;*.json;*.jpg;*.raw;*.png;*.txt"), ("모든파일", "*.*")))
+    return
+
+def predictMultiL():
+    global csvList, filename
+    '''
+    다항분류 로지스틱 예측
+    '''
+    return
+
+def knn():
+    global csvList, filename
+    '''
+    K-NN 분류
+    '''
+    filename = askopenfilename(parent=window,
+      filetypes=(("데이터 파일", "*.xls;*.xlsx;*.csv;*.json;*.jpg;*.raw;*.png;*.txt"), ("모든파일", "*.*")))
+    return
+
+def learnSVM():
+    global csvList, filename
+    '''
+    서포트벡터머신 학습
+    '''
+    filename = askopenfilename(parent=window,
+      filetypes=(("데이터 파일", "*.xls;*.xlsx;*.csv;*.json;*.jpg;*.raw;*.png;*.txt"), ("모든파일", "*.*")))
+    return
+
+def predictSVM():
+    global csvList, filename
+    '''
+    SVM 예측
+    '''
+    return
+    
 ## 변수선언 init
 window, canvas, paper, filename = [None] * 4
 inImage, outImage = [], []
@@ -2278,7 +2355,7 @@ cellList,csvList = [], []
 if __name__ == "__main__":
     window = Tk()
     window.geometry('500x500')
-    window.title('J Photo 1.0')
+    window.title('cutz Analyzer v1.0')
     window.bind("<ButtonRelease-1>", mouseDrop)
     window.bind("<Button-1>", mouseClick)
     status = Label(window, text='이미지 정보: ', bd=1, relief=SUNKEN, anchor=W)
@@ -2373,6 +2450,22 @@ if __name__ == "__main__":
     mainMenu.add_cascade(label='빅데이터 처리', menu=bigDataMenu)
     bigDataMenu.add_command(label='SQLite 대용량 보내기', command=bigData01)
     bigDataMenu.add_command(label='mySQL 대용량 보내기', command=bigData02)
+    
+    mlMenu = Menu(mainMenu)
+    mainMenu.add_cascade(label='머신러닝 처리', menu=mlMenu)
+    mlMenu.add_command(label='학습: Linear Regression', command=learnLinearR)
+    mlMenu.add_command(label='예측: Linear Regression', command=predictLinearR)
+    mlMenu.add_separator()
+    mlMenu.add_command(label='학습: Binary Logistic', command=learnBinaryL)
+    mlMenu.add_command(label='예측: Binary Logistic', command=predictBinaryL)
+    mlMenu.add_separator()
+    mlMenu.add_command(label='학습: Multi Logistic', command=learnMultiL)
+    mlMenu.add_command(label='예측: Multi Logistic', command=predictMultiL)
+    mlMenu.add_separator()
+    mlMenu.add_command(label='K-NN', command=knn)
+    mlMenu.add_separator()
+    mlMenu.add_command(label='학습: SVM', command=learnSVM)
+    mlMenu.add_command(label='예측: SVM', command=predictSVM)
     
     excelMenu = Menu(mainMenu)
     mainMenu.add_cascade(label='Excel DB처리', menu=excelMenu)
